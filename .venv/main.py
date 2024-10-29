@@ -1,7 +1,12 @@
 import os
 import numpy as np
+import pandas
 import pandas as pd
 import settings as s
+from analyse_all_programs_report import AnalyseAllPrograms
+
+# init objects
+analyse_all_programs_report = AnalyseAllPrograms()
 
 # pandas settings
 pd.set_option('display.max_columns', 18)
@@ -23,7 +28,7 @@ df = df[['Machine','Program','Pallet','PCount_Actual','CycleStart_Internal','Cyc
 df_programs = dict()
 for k, v in df.groupby('Program'):
     v = v.reset_index(drop=True)
-    v['Cycle_Minutes'] = pd.to_datetime(v['CycleTime_Internal'],format='%H:%M:%S')
+    v['Cycle_Minutes'] = pd.to_datetime(v['CycleTime_Internal'],format='%H:%M:%S', errors='coerce')
     v['Cycle_Minutes'] = (
         round(v['Cycle_Minutes'].dt.hour*60 +
               v['Cycle_Minutes'].dt.minute +
@@ -33,6 +38,10 @@ for k, v in df.groupby('Program'):
 
 df_programs_keys = list(df_programs.keys())
 print("Programs Found:", len(df_programs_keys))
+
+df_program_groups_dict = dict()
+df_all_programs_report = pd.DataFrame(
+    columns=['Program', 'Current Group Cycle', 'Shortest Group Cycle', 'Longest Group Cycle'])
 
 for program in df_programs_keys:
     cycle_count = len(df_programs[program].index)
@@ -45,9 +54,8 @@ for program in df_programs_keys:
     print()
     # print(df_programs[program])
 
-    # create df for cycle summary
-    columns = ['Cycle Group Start Time', 'Cycle Group End Time', 'Median Length', 'Matching Cycles', 'Start Index', 'End Index']
-    df_program_summary = pd.DataFrame(columns=columns)
+    # create df for cycle summary and report
+    df_program_groups = pd.DataFrame(columns=['Cycle Group Start Time', 'Cycle Group End Time', 'Median Length', 'Matching Cycles', 'Start Index', 'End Index'])
 
     program_times = dict()
     #cycle_index
@@ -75,7 +83,7 @@ for program in df_programs_keys:
             matching_cycles = matches + 1
             start_index = i
             end_index = i + j
-            df_program_summary.loc[i] = (cycle_group_start_time,
+            df_program_groups.loc[i] = (cycle_group_start_time,
                                      cycle_group_end_time,
                                      median_length,
                                      matching_cycles,
@@ -96,14 +104,30 @@ for program in df_programs_keys:
             i += 1
 
     # print(df_programs[program].iloc[0])
-    df_program_summary.reset_index(drop=True, inplace=True)
-    print("Current Group Cycle Time: " + str(df_program_summary.iloc[0]['Median Length']))
-    print("Shortest Group Cycle Time: " + str(df_program_summary.loc[df_program_summary['Median Length'].idxmin()]['Median Length']))
-    print("Longest Group Cycle Time: " + str(df_program_summary.loc[df_program_summary['Median Length'].idxmax()]['Median Length']))
+    df_program_groups.reset_index(drop=True, inplace=True)
+    if len(df_program_groups.index) > 0:
+        current_group_cycle = df_program_groups.iloc[0]['Median Length']
+        shortest_group_cycle = df_program_groups.loc[df_program_groups['Median Length'].idxmin()]['Median Length']
+        longest_group_cycle = df_program_groups.loc[df_program_groups['Median Length'].idxmax()]['Median Length']
 
+    else:
+        current_group_cycle = 0
+        shortest_group_cycle = 0
+        longest_group_cycle = 0
 
-    print()
-    print(df_program_summary)
+    df_all_programs_report.loc[i] = (program, current_group_cycle, shortest_group_cycle, longest_group_cycle)
 
+    #print()
+    #print(df_program_groups)
 
     #input("Press Enter to continue...")
+
+df_all_programs_report.reset_index(drop = True, inplace=True)
+print("All Programs Report")
+print(df_all_programs_report)
+print()
+
+df_longer_cycles_report = analyse_all_programs_report.find_longer_cycles(df_all_programs_report)
+print("Longer Cycles Report")
+print(df_longer_cycles_report)
+print()
