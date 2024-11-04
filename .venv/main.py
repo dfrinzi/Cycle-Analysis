@@ -30,8 +30,8 @@ while(True):
     pd.set_option('display.max_columns', 18)
     pd.set_option('display.width', 400)
 
+    # read data files, create dataframe of cleaned data
     file_data_appended = []
-
     file_list = os.listdir(s.program_cycles_folder)
     for file in file_list:
         data = pd.read_excel(s.program_cycles_folder + file)
@@ -44,6 +44,7 @@ while(True):
     df[s.cycle_start] = pd.to_datetime(df[s.cycle_start]).dt.date
     # print(df)
 
+    # create dictionary of dataframes by program name, clean timestamp data
     df_programs = dict()
     for k, v in df.groupby(s.program):
         v = v.reset_index(drop=True)
@@ -54,7 +55,7 @@ while(True):
                   v[s.cycle_length_minutes].dt.second/60,2))
         df_programs[k] = v
 
-
+    # create report structure
     df_programs_keys = list(df_programs.keys())
     programs_found = len(df_programs_keys)
     print(" Programs Found:", programs_found)
@@ -73,6 +74,7 @@ while(True):
                  s.longest_group_date,
                  s.longest_part_count,])
 
+    # analyze each program
     for program in df_programs_keys:
         # progress count
         programs_processed = programs_processed + 1
@@ -102,6 +104,7 @@ while(True):
         #cycle_index
         i = 0
 
+        # analyze each cycle, find groups of matching cycles
         while i < cycle_count:
             base_cycle = df_programs[program].iloc[i][s.cycle_length_minutes]
             matches = 0
@@ -122,15 +125,17 @@ while(True):
 
             # test if all cycles in the list are within range of the median
             for k in range(0, len(test_list)):
-                if test_list[k] < median_test_cycle * 1.05 and test_list[k] > median_test_cycle * 0.95:
+                if (test_list[k] < median_test_cycle * s.high_match_limit and
+                        test_list[k] > median_test_cycle * s.low_match_limit):
                     matches_dict[i+k] = test_list[k]
                     matches += 1
 
-           # if a pattern is found, add subsequent matching cycles and record information in the df
+           # if a pattern is found, add any subsequent matching cycles and record information in the df
             if matches > 4:
                 for j in range(5, cycle_count - i - 5):
                     test_cycle = df_programs[program].iloc[i + j][s.cycle_length_minutes]
-                    if test_cycle < median_test_cycle * 1.05 and test_cycle > median_test_cycle * 0.95:
+                    if (test_cycle < median_test_cycle * s.high_match_limit and
+                            test_cycle > median_test_cycle * s.low_match_limit):
                         matches_dict[i + j] = test_cycle
                         part_count_list.append(df_programs[program].iloc[i + j][s.part_count])
                         matches += 1
@@ -168,6 +173,8 @@ while(True):
                 i += 1
 
         # print(df_programs[program].iloc[0])
+
+        # set data and add to report dataframe
         df_program_groups.reset_index(drop=True, inplace=True)
         if len(df_program_groups.index) > 0:
             current_group_cycle = df_program_groups.iloc[0][s.median_length]
@@ -180,6 +187,7 @@ while(True):
             longest_group_cycle_date = df_program_groups.loc[df_program_groups[s.median_length].idxmax()][s.cycle_group_start_time]
             longest_part_count = df_program_groups.loc[df_program_groups[s.median_length].idxmax()][s.part_count]
 
+        # set data to 0 if group isn't found for the program
         else:
             current_group_cycle = 0
             shortest_group_cycle = 0
@@ -226,14 +234,6 @@ while(True):
             df.to_excel(writer, sheet_name=sheetname)  # send df to writer
             worksheet = writer.sheets[sheetname]  # pull worksheet object
             worksheet.autofit()
-            # for idx, col in enumerate(df):  # loop through all columns
-            #     series = df[col]
-            #     max_len = max((
-            #         series.astype(str).map(len).max(),  # len of largest item
-            #         len(str(series.name))  # len of column name/header
-            #         )) + 1  # adding a little extra space
-            #     worksheet.set_column(idx, idx, max_len)  # set column width
-
 
     print()
     print("Report saved to: " + s.reports_folder)

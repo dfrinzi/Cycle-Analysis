@@ -7,6 +7,13 @@ all_report_output = "all_programs.xlsx"
 longer_cycles_output = "longer_cycles.xlsx"
 no_groups_output = "no_program_groups.xlsx"
 
+# range for matching cycles into a group
+high_match_limit = 1.05
+low_match_limit = 0.95
+# limit for reporting that the current cycle is longer than the shortest
+current_to_short_limit = 1.03
+
+# column names
 program = "Program"
 machine = "Machine"
 pallet = "Pallet"
