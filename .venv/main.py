@@ -40,18 +40,18 @@ while(True):
     df = pd.concat(file_data_appended, ignore_index=True)
     df = df.drop_duplicates(keep='first')
     df = df.sort_values(by=[s.cycle_start], ascending=False)
-    df = df[['Machine','Program','Pallet','PCount_Actual',s.cycle_start,s.cycle_time]]
+    df = df[[s.machine, s.program,s.pallet ,s.part_count ,s.cycle_start,s.cycle_time]]
     df[s.cycle_start] = pd.to_datetime(df[s.cycle_start]).dt.date
     # print(df)
 
     df_programs = dict()
-    for k, v in df.groupby('Program'):
+    for k, v in df.groupby(s.program):
         v = v.reset_index(drop=True)
-        v['Cycle_Minutes'] = pd.to_datetime(v[s.cycle_time],format='%H:%M:%S', errors='coerce')
-        v['Cycle_Minutes'] = (
-            round(v['Cycle_Minutes'].dt.hour*60 +
-                  v['Cycle_Minutes'].dt.minute +
-                  v['Cycle_Minutes'].dt.second/60,2))
+        v[s.cycle_length_minutes] = pd.to_datetime(v[s.cycle_time],format='%H:%M:%S', errors='coerce')
+        v[s.cycle_length_minutes] = (
+            round(v[s.cycle_length_minutes].dt.hour*60 +
+                  v[s.cycle_length_minutes].dt.minute +
+                  v[s.cycle_length_minutes].dt.second/60,2))
         df_programs[k] = v
 
 
@@ -62,7 +62,16 @@ while(True):
     programs_processed = 0
     df_program_groups_dict = dict()
     df_all_programs_report = pd.DataFrame(
-        columns=['Program', 'Current Group Cycle', s.current_group_date, 'Shortest Group Cycle', s.shortest_group_date, 'Longest Group Cycle'])
+        columns=[s.program,
+                 s.current_group_cycle,
+                 s.current_group_date,
+                 s.current_part_count,
+                 s.shortest_group_cycle,
+                 s.shortest_group_date,
+                 s.shortest_part_count,
+                 s.longest_group_cycle,
+                 s.longest_group_date,
+                 s.longest_part_count,])
 
     for program in df_programs_keys:
         # progress count
@@ -81,24 +90,31 @@ while(True):
         # print(df_programs[program])
 
         # create df for cycle summary and report
-        df_program_groups = pd.DataFrame(columns=['Cycle Group Start Time', 'Cycle Group End Time', 'Median Length', 'Matching Cycles', 'Start Index', 'End Index'])
-
+        df_program_groups = pd.DataFrame(columns=[s.cycle_group_start_time,
+                                                  s.cycle_group_end_time,
+                                                  s.median_length,
+                                                  s.matching_cycles,
+                                                  s.start_index,
+                                                  s.end_index,
+                                                  s.part_count])
 
         program_times = dict()
         #cycle_index
         i = 0
 
         while i < cycle_count:
-            base_cycle = df_programs[program].iloc[i]['Cycle_Minutes']
+            base_cycle = df_programs[program].iloc[i][s.cycle_length_minutes]
             matches = 0
             matches_dict = dict()
             test_list = list()
+            part_count_list = list()
             median_test_cycle = 0
 
             # add the current cycle and next 4 to a list and find the median
             for j in range(0,cycle_count-i):
-                test_cycle = df_programs[program].iloc[i+j]['Cycle_Minutes']
+                test_cycle = df_programs[program].iloc[i+j][s.cycle_length_minutes]
                 test_list.append(test_cycle)
+                part_count_list.append(df_programs[program].iloc[i+j][s.part_count])
 
                 if len(test_list) >4:
                     median_test_cycle = np.median(test_list)
@@ -113,9 +129,10 @@ while(True):
            # if a pattern is found, add subsequent matching cycles and record information in the df
             if matches > 4:
                 for j in range(5, cycle_count - i - 5):
-                    test_cycle = df_programs[program].iloc[i + j]['Cycle_Minutes']
+                    test_cycle = df_programs[program].iloc[i + j][s.cycle_length_minutes]
                     if test_cycle < median_test_cycle * 1.05 and test_cycle > median_test_cycle * 0.95:
                         matches_dict[i + j] = test_cycle
+                        part_count_list.append(df_programs[program].iloc[i + j][s.part_count])
                         matches += 1
                     else:
                         break
@@ -125,6 +142,7 @@ while(True):
                 cycle_group_start_time = df_programs[program].iloc[i+matches][s.cycle_start]
                 cycle_group_end_time = df_programs[program].iloc[i][s.cycle_start]
                 median_length = round(np.median(list(matches_dict.values())),2)
+                average_part_count = round(np.average(part_count_list),1)
                 matching_cycles = matches + 1
                 start_index = i
                 end_index = i + j
@@ -133,12 +151,13 @@ while(True):
                                          median_length,
                                          matching_cycles,
                                          start_index,
-                                         end_index)
+                                         end_index,
+                                         average_part_count)
 
                 # print all match groups
                 # print("Cycle Group Start: " + df_programs[program].iloc[i+matches][s.cycle_start])
                 # print("Cycle Group End: " + df_programs[program].iloc[i][s.cycle_start])
-                # print("Median Length: " + str(df_programs[program].iloc[i]['Cycle_Minutes']))
+                # print("Median Length: " + str(df_programs[program].iloc[i][s.cycle_length_minutes]))
                 # print("Matching Cycles:", matches)
                 # print()
 
@@ -151,18 +170,34 @@ while(True):
         # print(df_programs[program].iloc[0])
         df_program_groups.reset_index(drop=True, inplace=True)
         if len(df_program_groups.index) > 0:
-            current_group_cycle = df_program_groups.iloc[0]['Median Length']
-            current_group_cycle_date = df_program_groups.iloc[0]['Cycle Group Start Time']
-            shortest_group_cycle = df_program_groups.loc[df_program_groups['Median Length'].idxmin()]['Median Length']
-            shortest_group_cycle_date = df_program_groups.loc[df_program_groups['Median Length'].idxmin()]['Cycle Group Start Time']
-            longest_group_cycle = df_program_groups.loc[df_program_groups['Median Length'].idxmax()]['Median Length']
+            current_group_cycle = df_program_groups.iloc[0][s.median_length]
+            current_group_cycle_date = df_program_groups.iloc[0][s.cycle_group_start_time]
+            current_part_count = df_program_groups.iloc[0][s.part_count]
+            shortest_group_cycle = df_program_groups.loc[df_program_groups[s.median_length].idxmin()][s.median_length]
+            shortest_group_cycle_date = df_program_groups.loc[df_program_groups[s.median_length].idxmin()][s.cycle_group_start_time]
+            shortest_part_count = df_program_groups.loc[df_program_groups[s.median_length].idxmin()][s.part_count]
+            longest_group_cycle = df_program_groups.loc[df_program_groups[s.median_length].idxmax()][s.median_length]
+            longest_group_cycle_date = df_program_groups.loc[df_program_groups[s.median_length].idxmax()][s.cycle_group_start_time]
+            longest_part_count = df_program_groups.loc[df_program_groups[s.median_length].idxmax()][s.part_count]
 
         else:
             current_group_cycle = 0
             shortest_group_cycle = 0
             longest_group_cycle = 0
+            current_part_count = 0
+            shortest_part_count = 0
+            longest_part_count = 0
 
-        df_all_programs_report.loc[i] = (program, current_group_cycle, current_group_cycle_date, shortest_group_cycle, shortest_group_cycle_date, longest_group_cycle)
+        df_all_programs_report.loc[i] = (program,
+                                         current_group_cycle,
+                                         current_group_cycle_date,
+                                         current_part_count,
+                                         shortest_group_cycle,
+                                         shortest_group_cycle_date,
+                                         shortest_part_count,
+                                         longest_group_cycle,
+                                         longest_group_cycle_date,
+                                         longest_part_count)
 
         # print()
         # print(df_program_groups)
@@ -170,7 +205,7 @@ while(True):
 
     df_all_programs_report.reset_index(drop = True, inplace=True)
     df_longer_cycles_report = analyse_all_programs_report.find_longer_cycles(df_all_programs_report)
-    df_no_groups_programs = df_all_programs_report[df_all_programs_report['Current Group Cycle'] == 0].copy()
+    df_no_groups_programs = df_all_programs_report[df_all_programs_report[s.current_group_cycle] == 0].copy()
 
     # print("All Programs Report")
     # print(df_all_programs_report)
